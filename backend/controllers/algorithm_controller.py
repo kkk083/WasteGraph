@@ -96,8 +96,17 @@ class AlgorithmController:
             history = []
             for row in results:
                 item = dict(row)
+                
+                # Convertir path si c'est une string JSON
                 item['path'] = json.loads(item['path']) if isinstance(item['path'], str) else item['path']
+                
+                # Convertir constraints_snapshot si c'est une string JSON
                 item['constraints_snapshot'] = json.loads(item['constraints_snapshot']) if isinstance(item['constraints_snapshot'], str) else item['constraints_snapshot']
+                
+                # FIX: Convertir calculated_at en ISO string
+                if item.get('calculated_at'):
+                    item['calculated_at'] = item['calculated_at'].isoformat()
+                
                 history.append(item)
             
             return history
@@ -128,8 +137,14 @@ class AlgorithmController:
             )
             
             # Ajouter l'info de l'original
-            new_result['original_calculation'] = dict(result)
-            new_result['original_calculation']['path'] = json.loads(result['path']) if isinstance(result['path'], str) else result['path']
+            original = dict(result)
+            original['path'] = json.loads(result['path']) if isinstance(result['path'], str) else result['path']
+            
+            # FIX: Convertir calculated_at en ISO string
+            if original.get('calculated_at'):
+                original['calculated_at'] = original['calculated_at'].isoformat()
+            
+            new_result['original_calculation'] = original
             
             return new_result
         except Exception as e:

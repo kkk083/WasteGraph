@@ -201,7 +201,13 @@ class WasteGraphHandler(BaseHTTPRequestHandler):
                 self.graph_controller.clear_graph()
                 self._send_json({'message': 'Graphe vidé'})
             
-            # DELETE /node/{id}
+            # DELETE /node/{id}/smart - Suppression intelligente (NOUVEAU)
+            elif path.startswith('/node/') and path.endswith('/smart'):
+                node_id = path.split('/')[2]
+                result = self.graph_controller.delete_node_smart(node_id)
+                self._send_json(result)
+            
+            # DELETE /node/{id} - Suppression simple
             elif path.startswith('/node/'):
                 node_id = path.split('/')[-1]
                 success = self.graph_controller.delete_node(node_id)
@@ -252,7 +258,8 @@ def run_server(host='localhost', port=8000):
     print(f"    GET    /graph")
     print(f"    POST   /graph/node")
     print(f"    POST   /graph/edge")
-    print(f"    DELETE /node/{{id}}")
+    print(f"    DELETE /node/{{id}}            (suppression simple)")
+    print(f"    DELETE /node/{{id}}/smart      (suppression intelligente)")
     print(f"    DELETE /edge/{{source}}/{{target}}")
     print(f"    DELETE /graph")
     print(f"\n  CONSTRAINTS:")

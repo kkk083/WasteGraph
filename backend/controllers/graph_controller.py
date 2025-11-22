@@ -64,7 +64,7 @@ class GraphController:
             raise Exception(f"Erreur récupération nœud: {e}")
     
     def delete_node(self, node_id):
-        """Supprimer un nœud"""
+        """Supprimer un nœud (simple, sans préserver l'optimalité)"""
         try:
             cursor = self.db.get_cursor()
             cursor.execute("DELETE FROM nodes WHERE id = %s", (node_id,))
@@ -78,12 +78,110 @@ class GraphController:
             self.db.rollback()
             raise Exception(f"Erreur suppression nœud: {e}")
     
+    def delete_node_smart(self, node_id):
+        """
+        Supprimer un nœud de manière intelligente en préservant l'optimalité
+        
+        Algorithme :
+        1. Trouver tous les voisins du nœud
+        2. Pour chaque paire de voisins, créer un raccourci si nécessaire
+        3. Supprimer le nœud
+        
+        Args:
+            node_id: ID du nœud à supprimer
+        
+        Returns:
+            dict: Statistiques de la suppression
+        """
+        try:
+            cursor = self.db.get_cursor()
+            
+            # 1. Récupérer les voisins du nœud (avec leurs distances)
+            cursor.execute("""
+                SELECT target, weight FROM edges
+                WHERE source = %s
+            """, (node_id,))
+            neighbors = cursor.fetchall()
+            
+            if not neighbors or len(neighbors) == 0:
+                # Nœud isolé, suppression simple
+                cursor.execute("DELETE FROM nodes WHERE id = %s", (node_id,))
+                deleted = cursor.rowcount > 0
+                self.db.commit()
+                cursor.close()
+                return {
+                    'deleted_node': node_id,
+                    'shortcuts_created': 0,
+                    'neighbors_count': 0,
+                    'message': 'Nœud isolé supprimé (aucun voisin)'
+                }
+            
+            neighbors_list = [(n['target'], n['weight']) for n in neighbors]
+            
+            # 2. Créer des raccourcis entre chaque paire de voisins
+            shortcuts_created = 0
+            shortcuts_updated = 0
+            
+            for i, (neighbor1, weight1) in enumerate(neighbors_list):
+                for neighbor2, weight2 in neighbors_list[i+1:]:
+                    # Distance via le nœud à supprimer
+                    shortcut_distance = weight1 + weight2
+                    
+                    # Vérifier si une arête existe déjà entre neighbor1 et neighbor2
+                    cursor.execute("""
+                        SELECT weight FROM edges
+                        WHERE source = %s AND target = %s
+                    """, (neighbor1, neighbor2))
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        # Arête existe : garder la plus courte distance
+                        if shortcut_distance < existing['weight']:
+                            # Mettre à jour avec la distance plus courte
+                            cursor.execute("""
+                                UPDATE edges
+                                SET weight = %s
+                                WHERE (source = %s AND target = %s) OR (source = %s AND target = %s)
+                            """, (shortcut_distance, neighbor1, neighbor2, neighbor2, neighbor1))
+                            shortcuts_updated += 1
+                    else:
+                        # Créer la nouvelle arête raccourci (dans les deux sens, graphe non-orienté)
+                        cursor.execute("""
+                            INSERT INTO edges (source, target, weight)
+                            VALUES (%s, %s, %s), (%s, %s, %s)
+                        """, (neighbor1, neighbor2, shortcut_distance, 
+                              neighbor2, neighbor1, shortcut_distance))
+                        shortcuts_created += 1
+            
+            self.db.commit()
+            
+            # 3. Supprimer le nœud (CASCADE supprimera les arêtes automatiquement)
+            cursor.execute("DELETE FROM nodes WHERE id = %s", (node_id,))
+            deleted = cursor.rowcount > 0
+            self.db.commit()
+            cursor.close()
+            
+            total_shortcuts = shortcuts_created + shortcuts_updated
+            
+            return {
+                'deleted_node': node_id,
+                'shortcuts_created': shortcuts_created,
+                'shortcuts_updated': shortcuts_updated,
+                'total_shortcuts': total_shortcuts,
+                'neighbors_count': len(neighbors_list),
+                'message': f'Nœud {node_id} supprimé intelligemment ({shortcuts_created} raccourcis créés, {shortcuts_updated} améliorés)'
+            }
+            
+        except Exception as e:
+            self.db.rollback()
+            raise Exception(f"Erreur suppression intelligente: {e}")
+    
     # =====================
     # EDGES - CRUD
     # =====================
     
     def create_edge(self, source, target, weight):
-        """Créer une arête NON-ORIENTÉE (sans constraint_value)"""
+        """Créer une arête NON-ORIENTÉE"""
         try:
             cursor = self.db.get_cursor()
             
@@ -157,7 +255,7 @@ class GraphController:
             raise Exception(f"Erreur suppression arête: {e}")
     
     # =====================
-    # CONSTRAINTS - NOUVEAU
+    # CONSTRAINTS
     # =====================
     
     def create_constraint(self, source, target, constraint_value, reason=None, expiry_days=None):
@@ -181,7 +279,14 @@ class GraphController:
             self.db.commit()
             cursor.close()
             
-            return dict(result)
+            # Convertir datetime en ISO string
+            constraint_dict = dict(result)
+            if constraint_dict.get('created_at'):
+                constraint_dict['created_at'] = constraint_dict['created_at'].isoformat()
+            if constraint_dict.get('expires_at'):
+                constraint_dict['expires_at'] = constraint_dict['expires_at'].isoformat()
+            
+            return constraint_dict
         except Exception as e:
             self.db.rollback()
             raise Exception(f"Erreur création contrainte: {e}")
@@ -199,7 +304,17 @@ class GraphController:
             results = cursor.fetchall()
             cursor.close()
             
-            return [dict(row) for row in results]
+            # Convertir datetime en ISO string
+            constraints = []
+            for row in results:
+                c = dict(row)
+                if c.get('created_at'):
+                    c['created_at'] = c['created_at'].isoformat()
+                if c.get('expires_at'):
+                    c['expires_at'] = c['expires_at'].isoformat()
+                constraints.append(c)
+            
+            return constraints
             
         except Exception as e:
             raise Exception(f"Erreur récupération contraintes: {e}")
@@ -212,7 +327,17 @@ class GraphController:
             results = cursor.fetchall()
             cursor.close()
             
-            return [dict(row) for row in results]
+            # Convertir datetime en ISO string
+            constraints = []
+            for row in results:
+                c = dict(row)
+                if c.get('created_at'):
+                    c['created_at'] = c['created_at'].isoformat()
+                if c.get('expires_at'):
+                    c['expires_at'] = c['expires_at'].isoformat()
+                constraints.append(c)
+            
+            return constraints
             
         except Exception as e:
             raise Exception(f"Erreur récupération contraintes: {e}")
@@ -251,10 +376,20 @@ class GraphController:
             results = cursor.fetchall()
             cursor.close()
             
-            # Sommer toutes les contraintes valides pour cette arête
+            # Sommer toutes les contraintes valides
             total_constraint = sum(row['constraint_value'] for row in results)
             
-            return total_constraint, [dict(row) for row in results]
+            # Convertir datetime en ISO string
+            constraints = []
+            for row in results:
+                c = dict(row)
+                if c.get('created_at'):
+                    c['created_at'] = c['created_at'].isoformat()
+                if c.get('expires_at'):
+                    c['expires_at'] = c['expires_at'].isoformat()
+                constraints.append(c)
+            
+            return total_constraint, constraints
         except Exception as e:
             raise Exception(f"Erreur récupération contraintes arête: {e}")
     
