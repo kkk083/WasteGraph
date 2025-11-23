@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WasteGraph - Optimisation de Collecte</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <h1>🗑️ WasteGraph</h1>
+            <p>Système d'optimisation de collecte des déchets</p>
+        </div>
+        <div class="header-stats">
+            <div class="stat">
+                <span class="stat-label">Nœuds</span>
+                <span class="stat-value" id="nodeCount">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Arêtes</span>
+                <span class="stat-value" id="edgeCount">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Contraintes</span>
+                <span class="stat-value" id="constraintCount">0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Sidebar - Contrôles -->
+        <aside class="sidebar">
+            <!-- Mode Édition -->
+            <div class="panel">
+                <h2 class="panel-title">🖊️ Édition</h2>
+                
+                <div class="btn-group">
+                    <button class="btn btn-primary" id="addNodeBtn">
+                        ➕ Ajouter un nœud
+                    </button>
+                    <button class="btn btn-secondary" id="addEdgeBtn">
+                        🔗 Relier deux nœuds
+                    </button>
+                </div>
+
+                <div class="input-group">
+                    <label>ID du nœud</label>
+                    <input type="text" id="nodeIdInput" placeholder="ex: A, DEPOT, Point1">
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-danger" id="deleteNodeBtn">
+                        🗑️ Supprimer un nœud
+                    </button>
+                </div>
+
+                <button class="btn btn-danger-outline btn-small" id="clearGraphBtn">
+                    🔄 Vider tout
+                </button>
+            </div>
+
+            <!-- Algorithmes -->
+            <div class="panel">
+                <h2 class="panel-title">🧮 Recherches</h2>
+                
+                <div class="input-group">
+                    <label>Source</label>
+                    <select id="sourceSelect">
+                        <option value="">-- Sélectionnez --</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>Destination</label>
+                    <select id="destSelect">
+                        <option value="">-- Sélectionnez --</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-success" id="dijkstraBtn">
+                    🚀 Plus court chemin
+                </button>
+
+                <div id="pathResult" class="result-box" style="display: none;">
+                    <strong>Résultat :</strong>
+                    <p id="pathDisplay"></p>
+                    <p id="distanceDisplay"></p>
+                </div>
+
+                <button class="btn btn-info" id="coloringBtn">
+                    🎨 Colorier le graphe
+                </button>
+
+                <div id="coloringResult" class="result-box" style="display: none;">
+                    <strong>Coloriage :</strong>
+                    <p id="coloringDisplay"></p>
+                </div>
+            </div>
+
+            <!-- Contraintes -->
+            <div class="panel">
+                <h2 class="panel-title">⚠️ Contraintes</h2>
+                
+                <button class="btn btn-primary" id="showConstraintsBtn">
+                    📋 Voir les contraintes
+                </button>
+
+                <button class="btn btn-secondary" id="addConstraintBtn">
+                    ➕ Ajouter contrainte
+                </button>
+
+                <button class="btn btn-info" id="testConstraintBtn">
+                    🧪 Tester (temporaire)
+                </button>
+            </div>
+
+            <!-- Historique -->
+            <div class="panel">
+                <h2 class="panel-title">📜 Historique</h2>
+                
+                <button class="btn btn-primary" id="showHistoryBtn">
+                    📊 Voir l'historique
+                </button>
+            </div>
+        </aside>
+
+        <!-- Canvas principal -->
+        <main class="canvas-container">
+            <div class="canvas-header">
+                <div class="mode-indicator" id="modeIndicator">
+                    Mode: Visualisation
+                </div>
+                <div class="canvas-controls">
+                    <button class="btn-icon" id="zoomInBtn" title="Zoom +">🔍+</button>
+                    <button class="btn-icon" id="zoomOutBtn" title="Zoom -">🔍-</button>
+                    <button class="btn-icon" id="resetViewBtn" title="Réinitialiser">🔄</button>
+                </div>
+            </div>
+            
+            <svg id="graphCanvas" width="100%" height="100%">
+                <defs>
+                    <!-- Flèche pour les arêtes -->
+                    <marker id="arrowhead" markerWidth="10" markerHeight="10" 
+                            refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#666" />
+                    </marker>
+                    
+                    <!-- Flèche pour le chemin optimal -->
+                    <marker id="arrowhead-highlight" markerWidth="10" markerHeight="10" 
+                            refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#4CAF50" />
+                    </marker>
+                </defs>
+                
+                <g id="edgesGroup"></g>
+                <g id="nodesGroup"></g>
+                <g id="labelsGroup"></g>
+            </svg>
+
+            <div class="canvas-info">
+                💡 Cliquez pour ajouter des nœuds • Sélectionnez deux nœuds pour créer une arête
+            </div>
+        </main>
+    </div>
+
+    <!-- Modale Contraintes -->
+    <div id="constraintsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚠️ Gestion des Contraintes</h2>
+                <button class="modal-close" onclick="closeModal('constraintsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="constraintsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Ajouter Contrainte -->
+    <div id="addConstraintModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Ajouter une Contrainte</h2>
+                <button class="modal-close" onclick="closeModal('addConstraintModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>Route (source)</label>
+                    <select id="constraintSource">
+                        <option value="">-- Sélectionnez --</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Route (destination)</label>
+                    <select id="constraintTarget">
+                        <option value="">-- Sélectionnez --</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Valeur de contrainte (km/temps)</label>
+                    <input type="number" id="constraintValue" step="0.1" placeholder="5.0">
+                </div>
+                <div class="input-group">
+                    <label>Raison (optionnel)</label>
+                    <input type="text" id="constraintReason" placeholder="Travaux, péage...">
+                </div>
+                <div class="input-group">
+                    <label>Expire dans (jours, optionnel)</label>
+                    <input type="number" id="constraintExpiry" placeholder="30">
+                </div>
+                <button class="btn btn-success" id="saveConstraintBtn">💾 Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Test Contrainte Temporaire -->
+    <div id="testConstraintModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🧪 Tester une Contrainte Temporaire</h2>
+                <button class="modal-close" onclick="closeModal('testConstraintModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="info-text">Testez l'impact d'une contrainte sans la sauvegarder</p>
+                <div class="input-group">
+                    <label>Route (format: A-B)</label>
+                    <input type="text" id="tempConstraintEdge" placeholder="DEPOT-A">
+                </div>
+                <div class="input-group">
+                    <label>Valeur de contrainte</label>
+                    <input type="number" id="tempConstraintValue" step="0.1" placeholder="10">
+                </div>
+                <button class="btn btn-success" id="runTestConstraintBtn">🚀 Tester</button>
+                <div id="testResult" class="result-box" style="display: none; margin-top: 1rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale Historique -->
+    <div id="historyModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>📜 Historique des Calculs</h2>
+                <button class="modal-close" onclick="closeModal('historyModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="historyList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
